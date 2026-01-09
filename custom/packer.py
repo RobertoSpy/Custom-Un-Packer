@@ -1,14 +1,18 @@
 import os
 import struct
+import logging
 from .format import Header, IndexEntry
 from .utils import validate_relative_path, calculate_checksum
 from .exceptions import ValidationError
 
 class Packer:
     def pack(self, target_dir: str, archive_path: str):
-        print(f"Packing '{target_dir}' into '{archive_path}'...")
+        logging.info(f"Packing '{target_dir}' into '{archive_path}'...")
         
         files_metadata = [] 
+        
+        logging.debug(f"Target directory: {target_dir}")
+        logging.debug(f"Archive path: {archive_path}")
         
         with open(archive_path, 'wb') as archive:
             # 1. Write Placeholder Header
@@ -37,6 +41,14 @@ class Packer:
                     import hashlib
                     sha256 = hashlib.sha256()
                     
+                    # Capture metadata
+                    stat_info = os.stat(full_path)
+                    mtime = stat_info.st_mtime
+                    mode = stat_info.st_mode
+                    
+                    logging.debug(f"Processing: {full_path} -> {clean_path}")
+                    logging.debug(f"  Stat: mtime={mtime}, mode={mode:o}")
+                    
                     with open(full_path, 'rb') as f:
                         while True:
                             chunk = f.read(65536) 
@@ -47,16 +59,18 @@ class Packer:
                             file_size += len(chunk)
                             
                     checksum = sha256.digest()
-                    
+                    logging.debug(f"  Checksum (SHA256): {checksum.hex()}")
                     
                     files_metadata.append(IndexEntry(
                         path=clean_path,
                         file_size=file_size,
                         content_offset=current_offset,
-                        checksum=checksum
+                        checksum=checksum,
+                        mtime=mtime,
+                        mode=mode
                     ))
                     
-                    print(f"  Added: {clean_path} ({file_size} bytes)")
+                    logging.info(f"  Added: {clean_path} ({file_size} bytes)")
 
             # 3. Write Index
             index_offset_start = archive.tell()
@@ -71,4 +85,4 @@ class Packer:
             )
             archive.write(final_header.pack())
             
-        print(f"Done. Archive created: {archive_path}")
+        logging.info(f"Done. Archive created: {archive_path}")

@@ -1,5 +1,5 @@
 import struct
-from .constants import HEADER_FORMAT, MAGIC_BYTES, VERSION, INDEX_ENTRY_FIXED_FMT, HEADER_SIZE
+from .constants import HEADER_FORMAT, MAGIC_BYTES, VERSION, ENTRY_METADATA_FMT, ENTRY_METADATA_SIZE, HEADER_SIZE
 from .exceptions import FormatError
 
 class Header:
@@ -26,17 +26,21 @@ class Header:
         return cls(file_count, index_offset)
 
 class IndexEntry:
-    def __init__(self, path: str, file_size: int, content_offset: int, checksum: bytes):
+    def __init__(self, path: str, file_size: int, content_offset: int, checksum: bytes, mtime: float = 0.0, mode: int = 0):
         self.path = path
         self.file_size = file_size
         self.content_offset = content_offset
         self.checksum = checksum
+        self.mtime = mtime
+        self.mode = mode
         
     def pack(self) -> bytes:
         path_bytes = self.path.encode('utf-8')
         path_len = len(path_bytes)
-        fmt = f'<H{path_len}sQQ32s'
-        return struct.pack(fmt, path_len, path_bytes, self.file_size, self.content_offset, self.checksum)
+        
+        header = struct.pack('<H', path_len)
+        metadata = struct.pack(ENTRY_METADATA_FMT, self.file_size, self.content_offset, self.checksum, self.mtime, self.mode)
+        return header + path_bytes + metadata
 
     @classmethod
     def read(cls, stream):
@@ -46,18 +50,15 @@ class IndexEntry:
             raise FormatError("Unexpected End of File reading Index Entry")
         path_len = struct.unpack('<H', path_len_data)[0]
         
-       
         path_bytes = stream.read(path_len)
         if len(path_bytes) < path_len:
              raise FormatError("Unexpected EOF reading Index Path")
         path = path_bytes.decode('utf-8')
         
-      
-        fixed_data = stream.read(48)
-        if len(fixed_data) < 48:
+        fixed_data = stream.read(ENTRY_METADATA_SIZE)
+        if len(fixed_data) < ENTRY_METADATA_SIZE:
              raise FormatError("Unexpected EOF reading Index Metadata")
              
-        file_size, content_offset, checksum = struct.unpack('<QQ32s', fixed_data)
+        file_size, content_offset, checksum, mtime, mode = struct.unpack(ENTRY_METADATA_FMT, fixed_data)
         
-        return cls(path, file_size, content_offset, checksum)
-
+        return cls(path, file_size, content_offset, checksum, mtime, mode)
